@@ -44,7 +44,7 @@ jobs:
           acr-token: ${{ secrets.ACR_TOKEN }}
 
   publish_templates:
-    name: Publish NGinx Docker image
+    name: Publish templates Docker image
     runs-on: arc-runner-set
     permissions:
       contents: read
@@ -56,8 +56,8 @@ jobs:
       - name: Publish Docker image
         uses: pvarki/config-ci-library/.github/actions/publish-image@main
         with:
-          product: nginx
-          component: templates
+          product: nginx-templates
+          component: worker
           target: configs
           dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
           dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
