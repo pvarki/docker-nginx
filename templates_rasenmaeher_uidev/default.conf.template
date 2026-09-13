@@ -4,6 +4,9 @@ ssl_certificate_key /le_certs/${NGINX_CERT_NAME}/privkey.pem;
 
 include /etc/nginx/includes/le_common_settings.conf;
 
+# Shared rate limit state for the SCEP endpoint, see "location /scep" below.
+limit_req_zone $binary_remote_addr zone=scep:1m rate=5r/s;
+
 map $http_host $redir_uri {
     default "";
 
@@ -74,6 +77,30 @@ server {
         proxy_read_timeout                  900;
         proxy_set_header  X-ClientCert-DN   $ssl_client_s_dn;
         proxy_set_header  X-ClientCert-Serial   $ssl_client_serial;
+    }
+
+    # SCEP, for MDM driven device enrolment. The MDM proxies the device's request here; the phone
+    # itself never reaches us. Plain HTTP by protocol -- SCEP secures itself at the CMS layer --
+    # so this rides the ordinary TLS of this server block and needs no client certificate.
+    location /scep {
+        # Fleet proxies every device from one address and staggers roughly a hundred a minute, so
+        # this is generous for real traffic and still bounds an unauthenticated endpoint that
+        # costs a private key operation per request.
+        limit_req zone=scep burst=20 nodelay;
+        client_max_body_size 64k;
+        # Resolved per request, not at startup. A static proxy_pass makes nginx refuse to start
+        # when the name does not resolve, which would take the whole deployment down with the
+        # responder. This way /scep simply answers 502 while everything else keeps working.
+        resolver ${DNS_RESOLVER_IP} valid=30s ipv6=off;
+        set $scep_backend "http://${NGINX_SCEP_UPSTREAM}:${NGINX_SCEP_UPSTREAM_PORT}";
+        proxy_pass  $scep_backend;
+        proxy_redirect                      off;
+        proxy_set_header  Host              $http_host;
+        proxy_set_header  X-Real-IP         $remote_addr;
+        proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header  X-Forwarded-Proto $scheme;
+        proxy_read_timeout                  900;
+        proxy_set_header  X-Request-ID      $request_id;
     }
 
     location /  {
